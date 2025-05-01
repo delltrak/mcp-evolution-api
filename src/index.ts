@@ -4,6 +4,7 @@ import { z } from "zod";
 import { config } from "./config.js";
 import { EvolutionApiService } from "./services/evolutionApiService.js";
 import * as http from "http";
+import { IncomingMessage, ServerResponse } from "http";
 import { WebSocketServer } from "ws";
 import { Readable } from "stream";
 import "dotenv/config";
@@ -738,11 +739,16 @@ export async function startServer() {
   }
 }
 
-// Implementação simplificada apenas com HTTP sem WebSocket
+// Implementação de Server-Sent Events para MCP
 export async function startWebSocketServer(port: number = parseInt(process.env.PORT || "4899")) {
-  console.log(`Iniciando servidor HTTP na porta ${port}...`);
+  console.log(`Iniciando servidor HTTP/SSE na porta ${port}...`);
   try {
-    const httpServer = http.createServer((req, res) => {
+    const httpServer = http.createServer();
+    const connections = new Map<string, ServerResponse>();
+    let connectionId = 0;
+
+    // Gerenciamento de requisições HTTP
+    httpServer.on('request', async (req: IncomingMessage, res: ServerResponse) => {
       // Configurações de CORS
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -754,9 +760,9 @@ export async function startWebSocketServer(port: number = parseInt(process.env.P
         res.end();
         return;
       }
-      
-      // Rota para SSE
-      if (req.url === '/sse') {
+
+      // Endpoint para SSE
+      if (req.url === '/sse' && req.method === 'GET') {
         console.log('Conexão SSE estabelecida');
         
         // Configurar cabeçalhos para SSE
@@ -766,18 +772,168 @@ export async function startWebSocketServer(port: number = parseInt(process.env.P
           'Connection': 'keep-alive'
         });
         
-        // Enviar um evento inicial
-        res.write(`data: ${JSON.stringify({ type: 'connection', status: 'established' })}\n\n`);
+        // Adicionar à lista de conexões ativas
+        const id = `conn_${connectionId++}`;
+        connections.set(id, res);
         
-        // Manter a conexão aberta e enviar um ping a cada 30 segundos
-        const pingInterval = setInterval(() => {
-          res.write(`data: ${JSON.stringify({ type: 'ping', timestamp: new Date().toISOString() })}\n\n`);
-        }, 30000);
+        // Enviar mensagem inicial
+        res.write(`event: connect\ndata: ${JSON.stringify({
+          jsonrpc: "2.0",
+          method: "initialize",
+          params: {
+            serverInfo: {
+              name: config.mcp.name,
+              version: config.mcp.version
+            },
+            capabilities: {
+              tools: {}
+            }
+          }
+        })}\n\n`);
         
-        // Limpar o intervalo quando a conexão for fechada
+        // Quando a conexão é fechada, remover da lista
         req.on('close', () => {
           console.log('Conexão SSE fechada');
-          clearInterval(pingInterval);
+          connections.delete(id);
+        });
+        
+        return;
+      }
+      
+      // Endpoint para receber mensagens JSON-RPC do cliente
+      if (req.url === '/message' && req.method === 'POST') {
+        let body = '';
+        
+        req.on('data', (chunk) => {
+          body += chunk.toString();
+        });
+        
+        req.on('end', async () => {
+          try {
+            const message = JSON.parse(body);
+            console.log('Mensagem recebida:', message);
+            
+            // Processamento da mensagem segundo o protocolo MCP
+            let response: any;
+            
+            if (message.method === 'tools/list') {
+              // Listar as ferramentas disponíveis
+              response = {
+                jsonrpc: "2.0",
+                id: message.id,
+                result: {
+                  tools: [
+                    {
+                      name: "getApiStatus",
+                      description: "Verifica o status da Evolution API",
+                      parameters: {}
+                    },
+                    {
+                      name: "getInstanceStatus",
+                      description: "Verifica o status da instância do WhatsApp",
+                      parameters: {}
+                    },
+                    {
+                      name: "sendTextMessage",
+                      description: "Envia uma mensagem de texto",
+                      parameters: {
+                        type: "object",
+                        properties: {
+                          number: {
+                            type: "string",
+                            description: "Número do destinatário no formato internacional"
+                          },
+                          text: {
+                            type: "string",
+                            description: "Texto da mensagem a ser enviada"
+                          }
+                        },
+                        required: ["number", "text"]
+                      }
+                    }
+                  ]
+                }
+              };
+            } else if (message.method === 'tools/call') {
+              // Chamada de ferramenta
+              const toolName = message.params.name;
+              const toolArgs = message.params.parameters;
+              
+              try {
+                // Aqui implementaríamos a chamada real à ferramenta
+                // Por enquanto, vamos apenas simular uma resposta
+                let result;
+                
+                if (toolName === 'getApiStatus') {
+                  const apiInfo = await evolutionService.getApiInfo();
+                  result = {
+                    content: [{ 
+                      type: "text", 
+                      text: `Evolution API v${apiInfo.version} está rodando. Status: ${apiInfo.status}` 
+                    }]
+                  };
+                } else if (toolName === 'sendTextMessage') {
+                  result = {
+                    content: [{ 
+                      type: "text", 
+                      text: `Mensagem enviada para ${toolArgs.number}: "${toolArgs.text}"` 
+                    }]
+                  };
+                } else {
+                  throw new Error(`Ferramenta '${toolName}' não implementada`);
+                }
+                
+                response = {
+                  jsonrpc: "2.0",
+                  id: message.id,
+                  result: {
+                    result: result,
+                    isPartial: false
+                  }
+                };
+              } catch (err) {
+                response = {
+                  jsonrpc: "2.0",
+                  id: message.id,
+                  error: {
+                    code: -32000,
+                    message: `Erro ao executar ferramenta: ${(err as Error).message}`
+                  }
+                };
+              }
+            } else {
+              // Método desconhecido
+              response = {
+                jsonrpc: "2.0",
+                id: message.id,
+                error: {
+                  code: -32601,
+                  message: "Método não encontrado"
+                }
+              };
+            }
+            
+            // Enviar resposta
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(response));
+            
+            // Broadcast para todas as conexões SSE ativas
+            for (const connection of connections.values()) {
+              if (response) {
+                connection.write(`event: message\ndata: ${JSON.stringify(response)}\n\n`);
+              }
+            }
+          } catch (err) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ 
+              jsonrpc: "2.0",
+              id: null,
+              error: { 
+                code: -32700,
+                message: "Parse error"
+              }
+            }));
+          }
         });
         
         return;
@@ -789,12 +945,13 @@ export async function startWebSocketServer(port: number = parseInt(process.env.P
         res.end(JSON.stringify({ 
           status: 'running', 
           message: 'MCP Evolution API is running.',
-          port: port
+          port: port,
+          server: `${config.mcp.name} v${config.mcp.version}`
         }));
         return;
       }
       
-      // Outras rotas
+      // Rota não encontrada
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ 
         status: 'error', 
@@ -804,12 +961,16 @@ export async function startWebSocketServer(port: number = parseInt(process.env.P
     });
     
     httpServer.listen(port, () => {
-      console.log(`Servidor HTTP iniciado com sucesso na porta ${port}!`);
+      console.log(`Servidor HTTP/SSE iniciado com sucesso na porta ${port}!`);
+      console.log(`Endpoints disponíveis:`);
+      console.log(`- GET /health: Verificação de saúde`);
+      console.log(`- GET /sse: Conexão SSE para o cliente MCP`);
+      console.log(`- POST /message: Endpoint para mensagens JSON-RPC`);
     });
     
     return { server, httpServer };
   } catch (error) {
-    console.error("Erro ao iniciar servidor HTTP:", error);
+    console.error("Erro ao iniciar servidor HTTP/SSE:", error);
     throw error;
   }
 }
