@@ -773,13 +773,12 @@ export async function startWebSocketServer(port: number = parseInt(process.env.P
 
 // Se este arquivo for executado diretamente, inicia o servidor
 if (import.meta.url === `file://${process.argv[1]}`) {
-  // Verifica se o WebSocket está habilitado
-  const enableWebSocket = process.env.ENABLE_WEBSOCKET === 'true';
-  const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+  // Obtém a porta das variáveis de ambiente
+  const port = process.env.PORT ? parseInt(process.env.PORT) : 4899;
   
+  // Inicia ambos os servidores
   startServer().catch(console.error);
+  startWebSocketServer(port).catch(console.error);
   
-  if (enableWebSocket) {
-    startWebSocketServer(port).catch(console.error);
-  }
+  console.log('MCP Evolution API está pronta para uso!');
 } 

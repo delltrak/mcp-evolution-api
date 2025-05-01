@@ -25,6 +25,7 @@ RUN npm ci --only=production --legacy-peer-deps
 # Definir variáveis de ambiente padrão
 ENV NODE_ENV=production
 ENV PORT=4899
+ENV ENABLE_WEBSOCKET=true
 
 # Expor a porta para WebSocket
 EXPOSE 4899
