@@ -738,15 +738,26 @@ export async function startServer() {
 }
 
 // Implementação simplificada apenas com HTTP sem WebSocket
-export async function startWebSocketServer(port: number = 3000) {
+export async function startWebSocketServer(port: number = parseInt(process.env.PORT || "4899")) {
   console.log(`Iniciando servidor HTTP na porta ${port}...`);
   try {
     const httpServer = http.createServer((req, res) => {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ 
-        status: 'running', 
-        message: 'MCP Evolution API is running. WebSocket functionality is limited in this version.' 
-      }));
+      // Rota para verificação de saúde
+      if (req.url === '/health' || req.url === '/') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ 
+          status: 'running', 
+          message: 'MCP Evolution API is running.',
+          port: port
+        }));
+      } else {
+        // Outras rotas
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ 
+          status: 'error', 
+          message: 'Not Found' 
+        }));
+      }
     });
     
     httpServer.listen(port, () => {

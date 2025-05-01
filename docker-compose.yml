@@ -4,10 +4,10 @@ services:
       context: .
       dockerfile: Dockerfile
     expose:
-      - "3000"
+      - "4899"
     environment:
       - NODE_ENV=production
-      - PORT=3000
+      - PORT=4899
     restart: unless-stopped
     networks:
       - mcp-network

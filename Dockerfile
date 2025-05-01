@@ -24,9 +24,10 @@ RUN npm ci --only=production --legacy-peer-deps
 
 # Definir variáveis de ambiente padrão
 ENV NODE_ENV=production
+ENV PORT=4899
 
 # Expor a porta para WebSocket
-EXPOSE 3000
+EXPOSE 4899
 
 # Comando para iniciar o servidor
 CMD ["node", "dist/index.js"] 
