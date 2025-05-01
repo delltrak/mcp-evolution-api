@@ -11,6 +11,11 @@ RUN npm install --legacy-peer-deps
 # Copiar código fonte
 COPY . .
 
+# Limpar cache do npm e reinstalar dependências
+RUN npm cache clean --force && \
+    rm -rf node_modules && \
+    npm install --legacy-peer-deps
+
 # Compilar o código
 RUN npm run build
 
