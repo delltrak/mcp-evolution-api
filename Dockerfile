@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Instalar todas as dependências (incluindo devDependencies para build)
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 # Copiar código fonte
 COPY . .
@@ -15,7 +15,7 @@ COPY . .
 RUN npm run build
 
 # Remover devDependencies e instalar apenas dependências de produção
-RUN npm ci --only=production
+RUN npm ci --only=production --legacy-peer-deps
 
 # Definir variáveis de ambiente padrão
 ENV NODE_ENV=production

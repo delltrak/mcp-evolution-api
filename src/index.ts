@@ -1,6 +1,6 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { WebSocketServerTransport } from "@modelcontextprotocol/sdk/server/websocket.js";
+import { WebSocketServerTransport } from "@modelcontextprotocol/sdk/server/transports/websocket.js";
 import { z } from "zod";
 import { config } from "./config.js";
 import { EvolutionApiService } from "./services/evolutionApiService.js";
