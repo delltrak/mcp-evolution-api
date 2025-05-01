@@ -9,6 +9,7 @@ services:
       - "3000"
     environment:
       - NODE_ENV=production
+      - PORT=3000
     volumes:
       - ./dist:/app/dist
     restart: unless-stopped
