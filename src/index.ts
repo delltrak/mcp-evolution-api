@@ -1,6 +1,5 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { WebSocketServerTransport } from "@modelcontextprotocol/sdk/server/transports/websocket.js";
 import { z } from "zod";
 import { config } from "./config.js";
 import { EvolutionApiService } from "./services/evolutionApiService.js";
@@ -738,23 +737,25 @@ export async function startServer() {
   }
 }
 
-// Inicia o servidor usando WebSocket
+// Implementação simplificada apenas com HTTP sem WebSocket
 export async function startWebSocketServer(port: number = 3000) {
-  console.log(`Iniciando servidor MCP para Evolution API via WebSocket na porta ${port}...`);
+  console.log(`Iniciando servidor HTTP na porta ${port}...`);
   try {
-    const httpServer = http.createServer();
-    const wss = new WebSocketServer({ server: httpServer });
-    
-    const transport = new WebSocketServerTransport(wss);
-    await server.connect(transport);
-    
-    httpServer.listen(port, () => {
-      console.log(`Servidor MCP WebSocket iniciado com sucesso na porta ${port}!`);
+    const httpServer = http.createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ 
+        status: 'running', 
+        message: 'MCP Evolution API is running. WebSocket functionality is limited in this version.' 
+      }));
     });
     
-    return { server, httpServer, wss };
+    httpServer.listen(port, () => {
+      console.log(`Servidor HTTP iniciado com sucesso na porta ${port}!`);
+    });
+    
+    return { server, httpServer };
   } catch (error) {
-    console.error("Erro ao iniciar servidor MCP WebSocket:", error);
+    console.error("Erro ao iniciar servidor HTTP:", error);
     throw error;
   }
 }
