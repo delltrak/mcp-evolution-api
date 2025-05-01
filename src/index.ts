@@ -5,6 +5,7 @@ import { config } from "./config.js";
 import { EvolutionApiService } from "./services/evolutionApiService.js";
 import * as http from "http";
 import { WebSocketServer } from "ws";
+import { Readable } from "stream";
 import "dotenv/config";
 
 // Inicializa o serviço da Evolution API
@@ -742,6 +743,46 @@ export async function startWebSocketServer(port: number = parseInt(process.env.P
   console.log(`Iniciando servidor HTTP na porta ${port}...`);
   try {
     const httpServer = http.createServer((req, res) => {
+      // Configurações de CORS
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      
+      // Responder a requisições OPTIONS (preflight)
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+      
+      // Rota para SSE
+      if (req.url === '/sse') {
+        console.log('Conexão SSE estabelecida');
+        
+        // Configurar cabeçalhos para SSE
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive'
+        });
+        
+        // Enviar um evento inicial
+        res.write(`data: ${JSON.stringify({ type: 'connection', status: 'established' })}\n\n`);
+        
+        // Manter a conexão aberta e enviar um ping a cada 30 segundos
+        const pingInterval = setInterval(() => {
+          res.write(`data: ${JSON.stringify({ type: 'ping', timestamp: new Date().toISOString() })}\n\n`);
+        }, 30000);
+        
+        // Limpar o intervalo quando a conexão for fechada
+        req.on('close', () => {
+          console.log('Conexão SSE fechada');
+          clearInterval(pingInterval);
+        });
+        
+        return;
+      }
+      
       // Rota para verificação de saúde
       if (req.url === '/health' || req.url === '/') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -750,14 +791,16 @@ export async function startWebSocketServer(port: number = parseInt(process.env.P
           message: 'MCP Evolution API is running.',
           port: port
         }));
-      } else {
-        // Outras rotas
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ 
-          status: 'error', 
-          message: 'Not Found' 
-        }));
+        return;
       }
+      
+      // Outras rotas
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ 
+        status: 'error', 
+        message: 'Not Found',
+        path: req.url
+      }));
     });
     
     httpServer.listen(port, () => {
