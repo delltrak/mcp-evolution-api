@@ -754,6 +754,9 @@ export async function startWebSocketServer(port: number = parseInt(process.env.P
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
       
+      // Log da requisição para debug
+      console.log(`${req.method} ${req.url}`);
+      
       // Responder a requisições OPTIONS (preflight)
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
@@ -761,8 +764,8 @@ export async function startWebSocketServer(port: number = parseInt(process.env.P
         return;
       }
 
-      // Endpoint para SSE
-      if (req.url === '/sse' && req.method === 'GET') {
+      // Endpoint para SSE - Precisa ser o endpoint raiz para compatibilidade com alguns clientes MCP
+      if ((req.url === '/sse' || req.url === '/') && req.method === 'GET') {
         console.log('Conexão SSE estabelecida');
         
         // Configurar cabeçalhos para SSE
@@ -771,14 +774,16 @@ export async function startWebSocketServer(port: number = parseInt(process.env.P
           'Cache-Control': 'no-cache',
           'Connection': 'keep-alive'
         });
+        res.flushHeaders(); // Enviar os headers imediatamente
         
         // Adicionar à lista de conexões ativas
         const id = `conn_${connectionId++}`;
         connections.set(id, res);
         
-        // Enviar mensagem inicial
-        res.write(`event: connect\ndata: ${JSON.stringify({
-          jsonrpc: "2.0",
+        // Formatação correta para SSE - com event e data separados
+        // Formato: event: <tipo>\ndata: <json>\n\n
+        const initMessage = {
+          jsonrpc: "2.0", 
           method: "initialize",
           params: {
             serverInfo: {
@@ -789,19 +794,30 @@ export async function startWebSocketServer(port: number = parseInt(process.env.P
               tools: {}
             }
           }
-        })}\n\n`);
+        };
         
-        // Quando a conexão é fechada, remover da lista
+        // Enviar mensagem inicial no formato correto
+        res.write(`event: initialize\n`);
+        res.write(`data: ${JSON.stringify(initMessage)}\n\n`);
+        
+        // Ping a cada 30 segundos para manter a conexão viva
+        const pingInterval = setInterval(() => {
+          res.write(`event: ping\n`);
+          res.write(`data: ${JSON.stringify({ jsonrpc: "2.0", method: "ping" })}\n\n`);
+        }, 30000);
+        
+        // Quando a conexão é fechada, remover da lista e limpar intervalo
         req.on('close', () => {
           console.log('Conexão SSE fechada');
           connections.delete(id);
+          clearInterval(pingInterval);
         });
         
         return;
       }
       
       // Endpoint para receber mensagens JSON-RPC do cliente
-      if (req.url === '/message' && req.method === 'POST') {
+      if ((req.url === '/message' || req.url === '/') && req.method === 'POST') {
         let body = '';
         
         req.on('data', (chunk) => {
@@ -815,9 +831,11 @@ export async function startWebSocketServer(port: number = parseInt(process.env.P
             
             // Processamento da mensagem segundo o protocolo MCP
             let response: any;
+            let eventType = 'response';
             
             if (message.method === 'tools/list') {
               // Listar as ferramentas disponíveis
+              eventType = 'tools/list';
               response = {
                 jsonrpc: "2.0",
                 id: message.id,
@@ -856,6 +874,7 @@ export async function startWebSocketServer(port: number = parseInt(process.env.P
               };
             } else if (message.method === 'tools/call') {
               // Chamada de ferramenta
+              eventType = 'tools/call';
               const toolName = message.params.name;
               const toolArgs = message.params.parameters;
               
@@ -865,13 +884,22 @@ export async function startWebSocketServer(port: number = parseInt(process.env.P
                 let result;
                 
                 if (toolName === 'getApiStatus') {
-                  const apiInfo = await evolutionService.getApiInfo();
-                  result = {
-                    content: [{ 
-                      type: "text", 
-                      text: `Evolution API v${apiInfo.version} está rodando. Status: ${apiInfo.status}` 
-                    }]
-                  };
+                  try {
+                    const apiInfo = await evolutionService.getApiInfo();
+                    result = {
+                      content: [{ 
+                        type: "text", 
+                        text: `Evolution API v${apiInfo.version} está rodando. Status: ${apiInfo.status}` 
+                      }]
+                    };
+                  } catch (error) {
+                    result = {
+                      content: [{ 
+                        type: "text", 
+                        text: `Erro ao conectar à Evolution API: ${(error as Error).message}` 
+                      }]
+                    };
+                  }
                 } else if (toolName === 'sendTextMessage') {
                   result = {
                     content: [{ 
@@ -903,6 +931,7 @@ export async function startWebSocketServer(port: number = parseInt(process.env.P
               }
             } else {
               // Método desconhecido
+              eventType = 'error';
               response = {
                 jsonrpc: "2.0",
                 id: message.id,
@@ -913,14 +942,15 @@ export async function startWebSocketServer(port: number = parseInt(process.env.P
               };
             }
             
-            // Enviar resposta
+            // Enviar resposta HTTP
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify(response));
             
-            // Broadcast para todas as conexões SSE ativas
+            // Broadcast para todas as conexões SSE ativas usando o formato correto de SSE
             for (const connection of connections.values()) {
               if (response) {
-                connection.write(`event: message\ndata: ${JSON.stringify(response)}\n\n`);
+                connection.write(`event: ${eventType}\n`);
+                connection.write(`data: ${JSON.stringify(response)}\n\n`);
               }
             }
           } catch (err) {
@@ -940,7 +970,7 @@ export async function startWebSocketServer(port: number = parseInt(process.env.P
       }
       
       // Rota para verificação de saúde
-      if (req.url === '/health' || req.url === '/') {
+      if (req.url === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ 
           status: 'running', 
@@ -963,9 +993,9 @@ export async function startWebSocketServer(port: number = parseInt(process.env.P
     httpServer.listen(port, () => {
       console.log(`Servidor HTTP/SSE iniciado com sucesso na porta ${port}!`);
       console.log(`Endpoints disponíveis:`);
+      console.log(`- GET /: Conexão SSE para o cliente MCP`);
+      console.log(`- POST /: Endpoint para mensagens JSON-RPC`);
       console.log(`- GET /health: Verificação de saúde`);
-      console.log(`- GET /sse: Conexão SSE para o cliente MCP`);
-      console.log(`- POST /message: Endpoint para mensagens JSON-RPC`);
     });
     
     return { server, httpServer };

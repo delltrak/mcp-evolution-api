@@ -255,3 +255,94 @@ console.log(groups.contents[0].text);
 ## Licença
 
 MIT 
+
+## Implantação com Docker
+
+### Usando Docker Compose (recomendado)
+
+```bash
+# Clonar o repositório
+git clone https://github.com/IntuitivePhella/mcp-evolution-api.git
+cd mcp-evolution-api
+
+# Criar arquivo .env a partir do exemplo
+cp .env.example .env
+# Edite o arquivo .env com suas configurações
+
+# Iniciar com Docker Compose
+docker-compose up -d
+```
+
+### Usando Docker diretamente
+
+```bash
+# Construir a imagem
+docker build -t mcp-evolution-api .
+
+# Executar o container
+docker run -p 4899:4899 --env-file .env mcp-evolution-api
+```
+
+## Implantação no Dokploy
+
+Para implantar este serviço no Dokploy, siga estas instruções:
+
+1. Certifique-se de que seu repositório tenha os seguintes arquivos:
+   - `Dockerfile` - Responsável pela construção da imagem
+   - `docker-compose.yml` - Define os serviços e configurações
+   - `.env` - Configura as variáveis de ambiente necessárias
+
+2. Importante: remova o `.env` do `.gitignore` para que o Dokploy tenha acesso às variáveis de ambiente necessárias.
+
+3. Configure seu arquivo `.env` com os valores corretos:
+   ```
+   PORT=4899
+   NODE_ENV=production
+   ENABLE_WEBSOCKET=true
+   EVOLUTION_API_URL=https://seu-servidor-evolution-api.com
+   EVOLUTION_API_KEY=sua-chave-api
+   EVOLUTION_API_INSTANCE=instancia-padrao
+   ```
+
+4. Ao configurar o serviço no Dokploy, certifique-se de:
+   - Expor a porta 4899
+   - Mapear a porta 4899 do container para a porta externa desejada
+   - Definir as variáveis de ambiente necessárias
+
+### Solução de problemas comuns no deploy
+
+Se encontrar problemas durante a implantação, verifique os seguintes pontos:
+
+1. **Erro com o arquivo .env**: 
+   - Certifique-se de que o arquivo `.env` exista na raiz do projeto
+   - Verifique se o `.env` não está no `.gitignore` para que seja incluído no deploy
+
+2. **Erro com o diretório dist**: 
+   - O Dockerfile foi configurado para compilar o código durante o build
+   - Não é necessário pré-compilar o código antes do deploy
+
+3. **Erro com dependências npm**: 
+   - O Dockerfile usa `--legacy-peer-deps` para evitar problemas de compatibilidade
+   - A reinstalação de dependências está incluída no processo de build
+
+4. **Erro com imports do SDK**: 
+   - Os caminhos de importação no código foram ajustados para usar `.js` no final
+   - Isso é necessário para compatibilidade com ESM no Node.js
+
+5. **Erro com a porta**: 
+   - A aplicação está configurada para usar a porta 4899 por padrão
+   - Você pode alterar isso no arquivo `.env`
+
+6. **Problema com o servidor não iniciando**: 
+   - Verifique os logs do container para possíveis erros
+   - O healthcheck no `docker-compose.yml` ajuda a identificar problemas de inicialização
+
+### Verificando o funcionamento
+
+Após o deploy, você pode verificar se o servidor está funcionando corretamente através do endpoint `/health`:
+
+```
+http://seu-host:4899/health
+```
+
+O servidor deve retornar um JSON com informações sobre o status do serviço. 

@@ -1,15 +1,30 @@
+version: '3.8'
+
 services:
   api:
     build:
       context: .
       dockerfile: Dockerfile
+    ports:
+      - "4899:4899"
     expose:
       - "4899"
     environment:
       - NODE_ENV=production
       - PORT=4899
       - ENABLE_WEBSOCKET=true
+      - EVOLUTION_API_URL=${EVOLUTION_API_URL:-https://seu-servidor-evolution-api.com}
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-sua-chave-api}
+      - EVOLUTION_API_INSTANCE=${EVOLUTION_API_INSTANCE:-instancia-padrao}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4899/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - ./.env:/app/.env:ro
     networks:
       - mcp-network
 
